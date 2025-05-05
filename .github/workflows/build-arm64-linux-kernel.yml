@@ -1,0 +1,59 @@
+name: Build ARM64 Linux Kernel
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build_kernel:
+    runs-on: ubuntu-18.04
+    env:
+      KERNEL_VERSION: 4.9.113
+      CONFIG_FILE: config-4.9
+      ARCH: arm64
+      CROSS_COMPILE: aarch64-linux-gnu-
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        repository: khadas/linux
+        ref: khadas-vim3-p-64bit
+        submodules: recursive
+
+    - name: Setup ARM64 toolchain
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-5-aarch64-linux-gnu g++-5-aarch64-linux-gnu \
+          binutils-aarch64-linux-gnu libssl1.0-dev
+        
+        sudo apt-get install -y build-essential libncurses-dev bison flex \
+          bc kmod cpio libelf-dev
+
+    - name: Apply kernel config
+      run: |
+        cp ${{ env.CONFIG_FILE }} .config
+        make ARCH=${{ env.ARCH }} olddefconfig
+
+    - name: Build kernel image
+      run: |
+        make -j$(nproc) ARCH=${{ env.ARCH }} CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+          bindeb-pkg LOCALVERSION=-khadas KDEB_PKGVERSION=$(date +%Y%m%d)
+
+    - name: Generate release assets
+      run: |
+        tar czvf kernel-artifacts.tar.gz ../*.deb arch/${{ env.ARCH }}/boot/Image
+
+    - name: Upload to GitHub Releases
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          kernel-artifacts.tar.gz
+          ../*.deb
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
