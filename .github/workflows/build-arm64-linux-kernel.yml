@@ -1,59 +1,63 @@
-name: Build ARM64 Linux Kernel
+name: Build ARM64 Linux 4.9.113
 
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    tags: v*
 
 jobs:
   build_kernel:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     env:
       KERNEL_VERSION: 4.9.113
       CONFIG_FILE: config-4.9
       ARCH: arm64
-      CROSS_COMPILE: aarch64-linux-gnu-
+      TOOLCHAIN_VER: 5.5.0-2019.12
 
     steps:
-    - name: Checkout repository
+    - name: Checkout kernel source
       uses: actions/checkout@v4
       with:
         repository: khadas/linux
         ref: khadas-vim3-p-64bit
         submodules: recursive
 
-    - name: Setup ARM64 toolchain
+    - name: Setup legacy ARM64 toolchain
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-5-aarch64-linux-gnu g++-5-aarch64-linux-gnu \
-          binutils-aarch64-linux-gnu libssl1.0-dev
+        sudo apt-get install -y build-essential libncurses5-dev bison flex \
+          libssl1.0-dev bc kmod cpio libelf-dev python2.7
         
-        sudo apt-get install -y build-essential libncurses-dev bison flex \
-          bc kmod cpio libelf-dev
+        wget https://releases.linaro.org/components/toolchain/binaries/${env.TOOLCHAIN_VER}/aarch64-linux-gnu/gcc-linaro-${env.TOOLCHAIN_VER}-x86_64_aarch64-linux-gnu.tar.xz
+        sudo tar -xf gcc-linaro-*.tar.xz -C /opt
+        echo "/opt/gcc-linaro-${env.TOOLCHAIN_VER}-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
 
     - name: Apply kernel config
       run: |
         cp ${{ env.CONFIG_FILE }} .config
-        make ARCH=${{ env.ARCH }} olddefconfig
+        make ARCH=${{ env.ARCH }} CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
-    - name: Build kernel image
+    - name: Build kernel artifacts
       run: |
-        make -j$(nproc) ARCH=${{ env.ARCH }} CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+        make -j$(nproc) ARCH=${{ env.ARCH }} CROSS_COMPILE=aarch64-linux-gnu- \
           bindeb-pkg LOCALVERSION=-khadas KDEB_PKGVERSION=$(date +%Y%m%d)
+        
+        make ARCH=${{ env.ARCH }} CROSS_COMPILE=aarch64-linux-gnu- Image dtbs
 
-    - name: Generate release assets
+    - name: Package artifacts
       run: |
-        tar czvf kernel-artifacts.tar.gz ../*.deb arch/${{ env.ARCH }}/boot/Image
+        mkdir artifacts
+        cp ../linux-*.deb artifacts/
+        cp arch/${{ env.ARCH }}/boot/Image artifacts/
+        cp arch/${{ env.ARCH }}/boot/dts/*.dtb artifacts/
+        tar czvf kernel-${{ env.KERNEL_VERSION }}.tar.gz artifacts/*
 
-    - name: Upload to GitHub Releases
+    - name: Upload to Releases
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: |
-          kernel-artifacts.tar.gz
-          ../*.deb
+          kernel-${{ env.KERNEL_VERSION }}.tar.gz
+          artifacts/*.deb
         draft: false
         prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
