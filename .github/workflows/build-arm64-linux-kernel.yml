@@ -7,12 +7,12 @@ on:
 
 jobs:
   build_kernel:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     env:
       KERNEL_VERSION: 4.9.113
       CONFIG_FILE: config-4.9
       ARCH: arm64
-      TOOLCHAIN_VER: 5.5.0-2019.12
+      TOOLCHAIN_URL: https://releases.linaro.org/components/toolchain/binaries/5.5-2019.12/aarch64-linux-gnu/gcc-linaro-5.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
 
     steps:
     - name: Checkout kernel source
@@ -22,15 +22,19 @@ jobs:
         ref: khadas-vim3-p-64bit
         submodules: recursive
 
-    - name: Setup legacy ARM64 toolchain
+    - name: Setup legacy toolchain
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential libncurses5-dev bison flex \
-          libssl1.0-dev bc kmod cpio libelf-dev python2.7
+          libssl1.0-dev bc kmod cpio libelf-dev python2.7 lzop
         
-        wget https://releases.linaro.org/components/toolchain/binaries/${env.TOOLCHAIN_VER}/aarch64-linux-gnu/gcc-linaro-${env.TOOLCHAIN_VER}-x86_64_aarch64-linux-gnu.tar.xz
+        echo "deb http://security.ubuntu.com/ubuntu bionic-security main" | sudo tee /etc/apt/sources.list.d/bionic-security.list
+        sudo apt-get update
+        sudo apt-get install -y libssl1.0-dev
+        
+        wget ${{ env.TOOLCHAIN_URL }}
         sudo tar -xf gcc-linaro-*.tar.xz -C /opt
-        echo "/opt/gcc-linaro-${env.TOOLCHAIN_VER}-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
+        echo "/opt/gcc-linaro-5.5.0-2019.12-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
 
     - name: Apply kernel config
       run: |
@@ -59,5 +63,8 @@ jobs:
         files: |
           kernel-${{ env.KERNEL_VERSION }}.tar.gz
           artifacts/*.deb
+          artifacts/Image
         draft: false
         prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
